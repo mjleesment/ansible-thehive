@@ -3,7 +3,7 @@ allow_duplicates: true
 dependencies: []
 
 galaxy_info:
-  author: wstinkens
-  description: TheHive/Cortex install
-  company: "NVISO"
+  author: mjleesment
+  description: TheHive/Cortex install + scripts
+  company: "Private"
   license: "GPL-3.0"

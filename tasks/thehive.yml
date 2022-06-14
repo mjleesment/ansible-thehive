@@ -1,308 +1,429 @@
 ---
+- name: Install OpenSSL requirements
+  pip:
+    name: cryptography>=1.6
 
-  - name: Install OpenSSL requirements
-    pip:
-     name: cryptography>=1.6
-  
-  - name: Create Nginx directory
-    file:
-      path: "{{ item }}"
-      state: directory
-      mode: 0755
-      recurse: yes
-    with_items:
-      - /opt/nginx/certs
-      - /opt/nginx/sites-enabled
-  
-  - name: Generate SLL private key
-    openssl_privatekey:
-      path: /opt/nginx/certs/thehive.pem
-  
-  - name: Generate SLL certificate signing request
-    openssl_csr:
-      path: /opt/nginx/certs/thehive.csr
-      privatekey_path: /opt/nginx/certs/thehive.pem
-  
-  - name: Generate SSL certificate
-    openssl_certificate:
-      path: /opt/nginx/certs/thehive.crt
-      privatekey_path: /opt/nginx/certs/thehive.pem
-      csr_path: /opt/nginx/certs/thehive.csr
-      provider: selfsigned
-      subject:
-        commonName: "{{ ansible_host }}"
-      subject_strict: yes
-      issuer:
-        commonName: "{{ sslcert_commonname}}"
-      issuer_strict: yes
-  
-  - name: Copy Nginx configuration
-    copy:
-      src: files/default.conf
-      dest: /opt/nginx/sites-enabled/default.conf
-    notify: restart nginx
-  
-  - name: Create TheHive directory and subdirectories
-    file:
-      path: "{{ item }}"
-      state: directory
-      mode: 0755
-      recurse: yes
-    with_items:
-      - /opt/thehive/dockervolumes/cortex
-      - /opt/thehive/dockervolumes/thehive
-      - /opt/thehive/etc
-      - /opt/cortex/etc
+- name: Create nginx directory
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: 0755
+    recurse: yes
+  with_items:
+    - /opt/nginx/certs
+    - /opt/nginx/sites-enabled
 
-  - name: Create thehivesentinelhooks directory
-    file:
-      path: /opt/thehivesentinelhooks/etc
-      state: directory
-      mode: 0755
-      recurse: yes
-    when: thehivesentinelhooks
+#  - name: Check if SSL private key exists
+#    stat:
+#      path: /opt/nginx/certs/thehive.pem
+#    register: ssl_key_exists
 
-  - name: Create thehivesentinelincidents directory
-    file:
-      path: /opt/thehivesentinelincidents
-      state: directory
-      mode: 0755
-      recurse: yes
-    when: thehivesentinelincidents
+#  - name: Generate SSL private key
+#    openssl_privatekey:
+#      path: /opt/nginx/certs/thehive.pem
+#    when: ssl_key_exists.stat.exists == false
 
-  - name: Create thehivesentinelincidents sentinel.ini
-    template:
-      src: templates/sentinel.ini.j2
-      dest: /opt/thehivesentinelincidents/sentinel.ini
-    when: thehivesentinelincidents
+#  - name: Generate SSL certificate signing request
+#    openssl_csr:
+#      path: /opt/nginx/certs/thehive.csr
+#      privatekey_path: /opt/nginx/certs/thehive.pem
 
-  - name: Get thehivesentinelincidents script from GitHub
-    get_url:
-      url: https://raw.githubusercontent.com/NVISO-BE/thehive-sentinel-integration/master/thehive-sentinel-incidents/thehivesentinelincidents.py
-      dest: /opt/thehivesentinelincidents/thehivesentinelincidents.py
-    when: thehivesentinelincidents
+#  - name: Generate SSL certificate
+#    openssl_certificate:
+#      path: /opt/nginx/certs/thehive.crt
+#      privatekey_path: /opt/nginx/certs/thehive.pem
+#      csr_path: /opt/nginx/certs/thehive.csr
+#      provider: selfsigned
+#      subject:
+#        commonName: "{{ ansible_host }}"
+#      subject_strict: yes
+#      issuer:
+#        commonName: "{{ sslcert_commonname }}"
+#      issuer_strict: yes
 
-  - name: install required pip modules for thehivesentinelincidents
-    pip:
-      name: "{{ packages }}"
-    vars:
-      packages:
-      - adal
-      - thehive4py==1.6.0
-    when: thehivesentinelincidents
+#  - name: Create thehive group
+#    group:
+#      name: thehive
+#      state: present
 
-  - name: create thehivesentinelincidents cron job
-    cron:
-      name: "thehivesentinelincidents"
-      minute: "*/5"
-      job: "python3 /opt/thehivesentinelincidents/thehivesentinelincidents.py >> /var/log/thehivesentinelincidents.log 2>&1"
-    when: thehivesentinelincidents
-  
-  - name: Clone Cortex Analysers repo
-    git:
-      repo: https://github.com/TheHive-Project/Cortex-Analyzers
-      dest: /opt/Cortex-Analyzers
-  
-  - name: Create thehive directory and subdirectories
-    file:
-      path: "{{ item }}"
-      state: directory
-      mode: 0755
-      recurse: yes
-      owner: 1000
-    with_items:
-      - /opt/thehive/dockervolumes/elastic_data
-  
-  - name: Create thehive application config
-    template:
-      src: templates/thehive-application.conf.j2
-      dest: /opt/thehive/etc/application.conf
-    notify: restart thehive
-  
-  - name: Create thehivesentinelhooks config.yml
-    template:
-      src: templates/config.yml.j2
-      dest: /opt/thehivesentinelhooks/etc/config.yml
-    when: thehivesentinelhooks
-    notify: restart thehivesentinelhooks
+#  - name: Create thehive user
+#    user:
+#      name: thehive
+#      comment: "TheHive Service Account"
+#      group: thehive
 
-  - name: Copy thehive logback.xml
-    copy:
-      src: files/logback.xml
-      dest: /opt/thehive/etc/logback.xml
-    notify: restart thehive
-  
-  - name: Copy cortex logback.xml
-    copy:
-      src: files/logback.xml
-      dest: /opt/cortex/etc/logback.xml
-    notify: restart cortex
-  
-  - name: Set vm.max_map_count setting for elasticsearch
-    sysctl:
-      name: vm.max_map_count
-      value: "262144"
-  
-  - name: Deploy TheHive/Cortex with thehivesentinelhooks
-    become: yes
-    docker_compose:
-        project_name: thehive
-        definition:
-          version: "2"
-          services:
-            thehive_elasticsearch:
-              image: "elasticsearch:{{ elasticsearch_version }}"
-              container_name: thehive_elasticsearch
-              volumes:
-                - /opt/thehive/dockervolumes/elastic_data:/usr/share/elasticsearch/data
-              environment:
-                - http.host=0.0.0.0
-                - transport.host=0.0.0.0
-                - xpack.security.enabled=false
-                - cluster.name=hive
-                - thread_pool.index.queue_size=100000
-                - thread_pool.search.queue_size=100000
-                - thread_pool.bulk.queue_size=100000
-              ulimits:
-                nofile:
-                  soft: 65536
-                  hard: 65536
-              restart: always
-  
-            thehivesentinelhooks:
-              image: "nvisobe/thehivesentinelhooks:{{ thehivesentinelhooks_version }}"
-              container_name: thehivesentinelhooks
-              volumes:
-                - /etc/localtime:/etc/localtime:ro
-                - /opt/thehivesentinelhooks/etc:/etc/thehivesentinelhooks
-              restart: always
-  
-            thehive_cortex:
-              image: "thehiveproject/cortex:{{ cortex_version }}"
-              container_name: thehive_cortex
-              depends_on:
-                - thehive_elasticsearch
-              links:
-                - thehive_elasticsearch:elasticsearch
-              volumes:
-                - /etc/localtime:/etc/localtime:ro
-                - /opt/thehive/dockervolumes/cortex:/data
-                - /opt/Cortex-Analyzers/analyzers/:/opt/Cortex-Analyzers/analyzers/
-                - /opt/Cortex-Analyzers/responders/:/opt/Cortex-Analyzers/responders/
-                - /opt/cortex/etc:/etc/cortex
-              restart: always
-  
-            thehive_main:
-              image: "thehiveproject/thehive:{{ thehive_version }}"
-              command: "--no-config-cortex"
-              container_name: thehive_main
-              depends_on:
-                - thehive_cortex
-                - thehive_elasticsearch
-                - thehivesentinelhooks
-              links:
-                - thehive_cortex:cortex
-                - thehive_elasticsearch:elasticsearch
-              volumes:
-                - /etc/localtime:/etc/localtime:ro
-                - /opt/thehive/dockervolumes/thehive:/data
-                - /opt/thehive/etc:/etc/thehive
-              ports:
-                - "0.0.0.0:9000:9000"
-              restart: always
-  
-            nginx:
-              image: "nginx:latest"
-              container_name: nginx
-              depends_on:
-                - thehive_cortex
-                - thehive_main
-              links:
-                - thehive_cortex
-                - thehive_main
-              volumes:
-                - /opt/nginx/certs:/etc/ssl/private
-                - /opt/nginx/sites-enabled:/etc/nginx/conf.d
-              ports:
-                - "0.0.0.0:443:443"
-                - "0.0.0.0:80:80"
-              restart: always
-    when: thehivesentinelhooks
+- name: Copy TheHive nginx configuration
+  copy:
+    src: conf/nginx-thehive.conf
+    dest: /opt/nginx/sites-enabled/nginx-thehive.conf
+    mode: 0755
 
-  - name: Deploy TheHive/Cortex
-    become: yes
-    docker_compose:
-        project_name: thehive
-        definition:
-          version: "2"
-          services:
-            thehive_elasticsearch:
-              image: "elasticsearch:{{ elasticsearch_version }}"
-              container_name: thehive_elasticsearch
-              volumes:
-                - /opt/thehive/dockervolumes/elastic_data:/usr/share/elasticsearch/data
-              environment:
-                - http.host=0.0.0.0
-                - transport.host=0.0.0.0
-                - xpack.security.enabled=false
-                - cluster.name=hive
-                - thread_pool.index.queue_size=100000
-                - thread_pool.search.queue_size=100000
-                - thread_pool.bulk.queue_size=100000
-              ulimits:
-                nofile:
-                  soft: 65536
-                  hard: 65536
-              restart: always
-  
-            thehive_cortex:
-              image: "thehiveproject/cortex:{{ cortex_version }}"
-              container_name: thehive_cortex
-              depends_on:
-                - thehive_elasticsearch
-              links:
-                - thehive_elasticsearch:elasticsearch
-              volumes:
-                - /etc/localtime:/etc/localtime:ro
-                - /opt/thehive/dockervolumes/cortex:/data
-                - /opt/Cortex-Analyzers/analyzers/:/opt/Cortex-Analyzers/analyzers/
-                - /opt/Cortex-Analyzers/responders/:/opt/Cortex-Analyzers/responders/
-                - /opt/cortex/etc:/etc/cortex
-              restart: always
-  
-            thehive_main:
-              image: "thehiveproject/thehive:{{ thehive_version }}"
-              command: "--no-config-cortex"
-              container_name: thehive_main
-              depends_on:
-                - thehive_cortex
-                - thehive_elasticsearch
-              links:
-                - thehive_cortex:cortex
-                - thehive_elasticsearch:elasticsearch
-              volumes:
-                - /etc/localtime:/etc/localtime:ro
-                - /opt/thehive/dockervolumes/thehive:/data
-                - /opt/thehive/etc:/etc/thehive
-              ports:
-                - "0.0.0.0:9000:9000"
-              restart: always
-  
-            nginx:
-              image: "nginx:latest"
-              container_name: nginx
-              depends_on:
-                - thehive_cortex
-                - thehive_main
-              links:
-                - thehive_cortex
-                - thehive_main
-              volumes:
-                - /opt/nginx/certs:/etc/ssl/private
-                - /opt/nginx/sites-enabled:/etc/nginx/conf.d
-              ports:
-                - "0.0.0.0:443:443"
-                - "0.0.0.0:80:80"
-              restart: always
-    when: not thehivesentinelhooks
-  
+- name: Copy Cortex nginx configuration
+  copy:
+    src: conf/nginx-cortex.conf
+    dest: /opt/nginx/sites-enabled/nginx-cortex.conf
+    mode: 0755
+
+- name: Check if scripts folder exists
+  stat:
+    path: /opt/scripts
+  register: scripts_folder
+
+- debug:
+    msg: "/opt/scripts exists"
+  when: scripts_folder.stat.exists
+
+- name: "Create scripts folder"
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: 0755
+    recurse: yes
+  with_items:
+    - /opt/scripts
+  when: scripts_folder.stat.exists==false
+
+- name: Check if backups folder exists
+  stat:
+    path: /opt/backups
+  register: backups_folder
+
+- debug:
+    msg: "/opt/backups exists"
+  when: backups_folder.stat.exists
+
+- name: "Create backups folder"
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: 0755
+    recurse: yes
+  with_items:
+    - /opt/backups/cassandra
+  when: scripts_folder.stat.exists==false
+
+- name: Copy Cassandara backup script
+  copy:
+    src: scripts/database_backup.sh
+    dest: /opt/scripts/database_backup.sh
+    mode: 0755
+
+- name: Copy Cassandara restore script
+  copy:
+    src: scripts/database_restore.sh
+    dest: /opt/scripts/database_restore.sh
+    mode: 0755
+
+- name: Copy Cassandara cleanup script
+  copy:
+    src: scripts/database_cleanup.sh
+    dest: /opt/scripts/database_cleanup.sh
+    mode: 0755
+
+- name: Register backup cronjob
+  ansible.builtin.cron:
+    name: "Cassandra backup"
+    minute: "0"
+    hour: "8"
+    job: "/opt/scripts/database_backup.sh"
+
+- name: Register backup cleanup cronjob
+  ansible.builtin.cron:
+    name: "Cassandra backup cleanup"
+    minute: "0"
+    hour: "0"
+    day: "15"
+    job: "/opt/scripts/database_cleanup.sh"
+
+- name: Create dockervolumes directory
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: 0755
+    recurse: no
+  with_items:
+    - /opt/thehive/dockervolumes/
+    - /opt/thehive/dockervolumes/
+
+- name: Check if ElasticSearch data folder exists
+  stat:
+    path: /opt/thehive/dockervolumes/elastic_data
+  register: elastic_data_folder
+
+- debug:
+    msg: "/opt/thehive/dockervolumes/elastic_data exists"
+  when: elastic_data_folder.stat.exists
+
+- name: "Create ElasticSearch data folder"
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: 0755
+    recurse: yes
+    owner: 1000
+    group: 1000
+  with_items:
+    - /opt/thehive/dockervolumes/elastic_data
+  when: elastic_data_folder.stat.exists==false
+
+- name: Check if ElasticSearch logs folder exists
+  stat:
+    path: /opt/thehive/dockervolumes/elastic_data
+  register: elastic_logs_folder
+
+- debug:
+    msg: "/opt/thehive/dockervolumes/elastic_logs exists"
+  when: elastic_logs_folder.stat.exists
+
+- name: Create ElasticSearch logs directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: 0755
+    recurse: yes
+    owner: 1000
+    group: 1000
+  with_items:
+    - /opt/thehive/dockervolumes/elastic_logs
+  when: elastic_logs_folder.stat.exists == false
+
+- name: Create TheHive and Cortex directory and subdirectories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: 0755
+    recurse: yes
+  with_items:
+    - /opt/thehive/dockervolumes/cortex
+    - /opt/thehive/dockervolumes/thehive
+    - /opt/thehive/etc
+    - /opt/cortex/etc
+    - /opt/thehive/logs
+
+- name: Check if Cortex Analyzers repo cloned
+  stat:
+    path: /opt/Cortex-Analyzers
+  register: cortex_analyzers_repo
+
+- name: Clone Cortex Analyzers repo
+  ansible.builtin.git:
+    repo: https://github.com/mjleesment/Cortex-Analyzers
+    dest: /opt/Cortex-Analyzers
+  when: cortex_analyzers_repo.stat.exists==false
+
+- name: Update Cortex Analyzers repo
+  ansible.builtin.git:
+    repo: https://github.com/mjleesment/Cortex-Analyzers
+    dest: /opt/Cortex-Analyzers
+    clone: no
+    update: yes
+  when: cortex_analyzers_repo.stat.exists
+
+- name: Test pip package list
+  ansible.builtin.debug:
+    msg: "{{ scripts_prereq_packages }}"
+
+- name: Install TheHive Slack Webhook requirements
+  pip:
+    name: "{{ scripts_prereq_packages }}"
+
+- name: Check if TheHive Slack Webhook folder exists
+  stat:
+    path: /opt/scripts/thehive-slack-webhook
+  register: thehive_slack_webhook_folder
+
+- debug:
+    msg: "/opt/scripts/thehive-slack-webhook exists"
+  when: thehive_slack_webhook_folder.stat.exists
+
+- name: "Create TheHive Slack Webhook folder"
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: 0755
+    recurse: yes
+  with_items:
+    - /opt/scripts/thehive-slack-webhook
+  when: thehive_slack_webhook_folder.stat.exists==false
+
+- name: Copy TheHive Slack Webhook lambda script
+  copy:
+    src: scripts/lambda_function.py
+    dest: /opt/scripts/thehive-slack-webhook/lambda_function.py
+    mode: 0755
+
+- name: Copy TheHive Slack Webhook config script
+  copy:
+    src: scripts/thehive-slack-webhook-config.py
+    dest: /opt/scripts/thehive-slack-webhook/config.py
+    mode: 0755
+
+- name: Copy TheHive Slack Webhook systemd service
+  copy:
+    src: scripts/thehive-slack-webhook.service
+    dest: /etc/systemd/system/thehive-slack-webhook.service
+    mode: 0644
+
+- name: Copy script for enabling TheHive Slack Webhook
+  copy:
+    src: scripts/enable_webhook.sh
+    dest: /opt/scripts/thehive-slack-webhook/enable_webhook.sh
+    mode: 0755
+
+- name: Start TheHive Slack Webhook service, if not started
+  ansible.builtin.service:
+    name: thehive-slack-webhook
+    state: started
+    enabled: yes
+  retries: 3
+  delay: 3
+  register: start_thehive_slack_webhook
+  until: start_thehive_slack_webhook is not failed
+
+- debug:
+    msg: "To enable the webhook, run scripts/enable_webhook.sh."
+  when: thehive_slack_webhook_folder.stat.exists
+
+- name: Create TheHive application config
+  template:
+    src: conf/thehive.conf
+    dest: /opt/thehive/etc/application.conf
+    mode: 0755
+
+- name: Create Cortex application config
+  template:
+    src: conf/cortex.conf
+    dest: /opt/cortex/etc/application.conf
+    mode: 0755
+
+- name: Copy TheHive logback.xml
+  copy:
+    src: conf/logback.xml
+    dest: /opt/thehive/etc/logback.xml
+    mode: 0755
+  notify: restart thehive
+
+- name: Copy Cortex logback.xml
+  copy:
+    src: conf/logback.xml
+    dest: /opt/cortex/etc/logback.xml
+    mode: 0755
+  notify: restart cortex
+
+- name: Set vm.max_map_count setting for elasticsearch
+  sysctl:
+    name: vm.max_map_count
+    value: "262144"
+
+- name: Start docker, if not started
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: yes
+  retries: 3
+  delay: 3
+  register: start_docker
+  until: start_docker is not failed
+
+- name: Deploy TheHive/Cortex
+  become: true
+  docker_compose:
+    project_name: thehive
+    definition:
+      version: "3"
+      services:
+        cassandra:
+          container_name: cassandra
+          image: cassandra:{{ cassandra_version }}
+          restart: unless-stopped
+          hostname: cassandra
+          environment:
+            - MAX_HEAP_SIZE=1G
+            - HEAP_NEWSIZE=1G
+            - CASSANDRA_CLUSTER_NAME=thp
+          volumes:
+            - /opt/cassandra/data:/var/lib/cassandra/data
+
+        elasticsearch:
+          image: "elasticsearch:{{ elasticsearch_version }}"
+          container_name: elasticsearch
+          volumes:
+            - /opt/thehive/dockervolumes/elastic_data:/usr/share/elasticsearch/data
+            - /opt/thehive/dockervolumes/elastic_logs:/usr/share/elasticsearch/logs
+          environment:
+            - http.host=0.0.0.0
+            - transport.host=0.0.0.0
+            - discovery.type=single-node
+            - script.allowed_types=inline
+            - xpack.security.enabled=false
+            - cluster.name=hive
+            - thread_pool.search.queue_size=100000
+            - thread_pool.write.queue_size=10000
+            - gateway.recover_after_nodes=1
+            - bootstrap.memory_lock=true
+            - ES_JAVA_OPTS=-Xms256m -Xmx256m
+          ulimits:
+            nofile:
+              soft: 65536
+              hard: 65536
+          restart: always
+
+        thehive_cortex:
+          image: "thehiveproject/cortex:{{ cortex_version }}"
+          container_name: thehive_cortex
+          depends_on:
+            - elasticsearch
+          links:
+            - elasticsearch:elasticsearch
+          volumes:
+            - /etc/localtime:/etc/localtime:ro
+            - /opt/thehive/dockervolumes/cortex:/data
+            - /opt/Cortex-Analyzers/analyzers/:/opt/Cortex-Analyzers/analyzers/
+            - /opt/Cortex-Analyzers/responders/:/opt/Cortex-Analyzers/responders/
+            - /opt/cortex/etc:/etc/cortex
+            - /var/run/docker.sock:/var/run/docker.sock
+            - /tmp:/tmp
+          command:
+            --job-directory ${JOB_DIRECTORY}
+          restart: always
+
+        thehive_main:
+          image: "thehiveproject/thehive4:{{ thehive_version }}"
+          container_name: thehive_main
+          depends_on:
+            - thehive_cortex
+            - elasticsearch
+            - cassandra
+          links:
+            - thehive_cortex:cortex
+            - elasticsearch:elasticsearch
+          volumes:
+            - /etc/localtime:/etc/localtime:ro
+            - /opt/thehive/dockervolumes/thehive/data:/data
+            - /opt/thehive/dockervolumes/thehive/index:/index
+            - /opt/thehive/etc:/etc/thehive
+          command:
+            --cortex-port 9001
+            --cortex-keys ${CORTEX_KEY}
+          ports:
+            - "127.0.0.1:9000:9000"
+          restart: always
+
+        nginx:
+          image: "nginx:{{ nginx_version }}"
+          hostname: nginx
+          container_name: nginx
+          depends_on:
+            - thehive_cortex
+            - thehive_main
+          links:
+            - thehive_cortex
+            - thehive_main
+          volumes:
+            - /opt/nginx/certs:/etc/ssl/private
+            - /opt/nginx/sites-enabled:/etc/nginx/conf.d
+          ports:
+            - "0.0.0.0:443:443"
+            - "0.0.0.0:80:80"
+            - "0.0.0.0:8080:8080"
+          restart: always

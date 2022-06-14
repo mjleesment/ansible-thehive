@@ -1,0 +1,12 @@
+[Unit]
+Description=Gunicorn instance to serve thehive-slack-webhook
+After=network.target
+
+[Service]
+User=root
+Group=root
+WorkingDirectory=/opt/scripts/thehive-slack-webhook
+ExecStart=gunicorn --workers 2 --bind 127.0.0.1:5000 -m 007 lambda_function:app
+
+[Install]
+WantedBy=multi-user.target

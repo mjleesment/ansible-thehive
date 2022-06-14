@@ -6,8 +6,8 @@
 - name: restart cortex
   command: docker restart thehive_cortex
 
-- name: restart thehivesentinelhooks
-  command: docker restart thehivesentinelhooks
+- name: restart elasticsearch
+  command: docker restart elasticsearch
 
 - name: restart nginx
   command: docker restart nginx
